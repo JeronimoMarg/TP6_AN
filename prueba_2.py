@@ -1,9 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+def aKelvin(T):
+    return T + 273.15
+
+def aCelsius(T):
+    return T - 273.15
+
 # Parameters
-dx = 0.0005  # spatial step (0.1 mm)
-dy = 0.0005
+dx = 0.00025  # spatial step (0.1 mm)
+dy = 0.00025
 dt = 0.1    # time step (s)
 total_time = 100  # total simulation time (s)
 x_length = 0.01  # domain length in x (10 mm)
@@ -27,43 +33,42 @@ ny = int(y_length / dy) + 1
 nt = int(total_time / dt)
 
 # Initialize temperature field (in Celsius)
-T = np.full((nx, ny), -10.0)
+T = np.full((nx, ny), aKelvin(-10))
 
 # Enthalpy field
-H = np.full((nx, ny), rho_ice * c_ice * (-10))
+H = np.full((nx, ny), rho_ice * c_ice * (aKelvin(-10)))
 
 # Boundary condition on the right side
 def boundary_condition_right(t):
-    if t <= 10:
-        return -10 + (95 * t / 10)  # Linear increase from -10 to 85
+    if t <= aKelvin(-10):
+        aux = -10 + (95 * t / 10)  # Linear increase from -10 to 85
+        return aKelvin(aux)
     else:
-        return 85
-    
-# Plot final temperature distribution
-plt.imshow(T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
-plt.colorbar(label="Temperature (°C)")
-plt.title("Temperature Distribution After 100 Seconds")
-plt.xlabel("x (mm)")
-plt.ylabel("y (mm)")
-plt.show()
+        return aKelvin(85)
 
 # Main simulation loop
 for n in range(nt):
     t = n * dt
     T_old = T.copy()
 
-    if n == 100:
-        plt.imshow(T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
-        plt.colorbar(label="Temperature (°C)")
-        plt.title("Temperature Distribution After 100 Seconds")
-        plt.xlabel("x (mm)")
-        plt.ylabel("y (mm)")
-        plt.show()
+    total_cells = nx * ny
+    ice_cells = np.sum(T < aKelvin(0))
+    water_cells = np.sum(T > aKelvin(0))
+    ice_percentage = (ice_cells / total_cells) * 100
+    water_percentage = (water_cells / total_cells) * 100
+    print(f"Time: {t:.1f} s - Ice: {ice_percentage:.2f}%, Water: {water_percentage:.2f}%")
+
+    plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
+    plt.colorbar(label="Temperature (K)")
+    plt.title("Temperature Distribution After Seconds")
+    plt.xlabel("x (mm)")
+    plt.ylabel("y (mm)")
+    plt.show()
 
     for i in range(1, nx - 1):
         for j in range(1, ny - 1):
             # Thermal diffusivity based on phase
-            if T_old[i, j] < 0:
+            if T_old[i, j] < aKelvin(0):
                 alpha = alpha_ice
                 k = k_ice
                 c = c_ice
@@ -94,8 +99,8 @@ for n in range(nt):
     T[:, -1] = T[:, -2]  # Top (insulated)
 
 # Plot final temperature distribution
-plt.imshow(T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
-plt.colorbar(label="Temperature (°C)")
+plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
+plt.colorbar(label="Temperature (K)")
 plt.title("Temperature Distribution After 100 Seconds")
 plt.xlabel("x (mm)")
 plt.ylabel("y (mm)")
