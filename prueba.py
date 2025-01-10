@@ -1,45 +1,102 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Parámetros del problema
-Lx = 10e-3  # Largo del dominio (10 mm)
-Ly = 1e-3   # Ancho del dominio (1 mm)
-Nx = 100    # Número de nodos en x
-Ny = 10     # Número de nodos en y
-dx = Lx / (Nx - 1)
-dy = Ly / (Ny - 1)
-alpha = 1.14e-6  # Difusividad térmica del hielo (m^2/s)
-dt = 0.1  # Paso de tiempo (s)
-total_time = 100  # Tiempo total de simulación (s)
-Nt = int(total_time / dt)  # Número de pasos de tiempo
+def aKelvin(T):
+    return T + 273.15
 
-# Condiciones iniciales
-T = np.full((Ny, Nx), -10.0)  # Temperatura inicial en todo el dominio (-10°C)
-f = np.zeros((Ny, Nx))  # Fracción de fase inicial (todo hielo)
+def aCelsius(T):
+    return T - 273.15
 
-# Función para actualizar la temperatura en el borde derecho
-def update_right_boundary(T, t):
-    if t <= 10:
-        T[:, -1] = -10 + (95 / 10) * t  # Rampa lineal de -10°C a 85°C en 10 s
+# Parameters
+dx = 0.00025  # spatial step (0.1 mm)
+dy = 0.00025
+dt = 0.1    # time step (s)
+total_time = 100  # total simulation time (s)
+x_length = 0.01  # domain length in x (10 mm)
+y_length = 0.001  # domain length in y (1 mm)
+
+# Thermal properties
+rho_ice = 917  # density of ice (kg/m^3)
+rho_water = 997  # density of water (kg/m^3)
+c_ice = 2100  # specific heat of ice (J/kg*K)
+c_water = 4186  # specific heat of water (J/kg*K)
+k_ice = 1.6  # thermal conductivity of ice (W/m*K)
+k_water = 0.6  # thermal conductivity of water (W/m*K)
+h_fusion = 334  # latent heat of fusion (J/kg)
+
+alpha_ice = k_ice / (rho_ice * c_ice)
+alpha_water = k_water / (rho_water * c_water)
+
+# Discretize the domain
+nx = int(x_length / dx) + 1
+ny = int(y_length / dy) + 1
+nt = int(total_time / dt)
+
+# Initialize temperature field (in Celsius)
+T = np.full((nx, ny), aKelvin(-10))
+
+# Enthalpy field
+H = np.full((nx, ny), rho_ice * c_ice * (aKelvin(-10)))
+
+# Boundary condition on the right side
+def boundary_condition_right(t):
+    if t <= aKelvin(-10):
+        aux = -10 + (95 * t / 10)  # Linear increase from -10 to 85
+        return aKelvin(aux)
     else:
-        T[:, -1] = 85  # Mantener 85°C después de 10 s
+        return aKelvin(85)
 
-# Simulación
-for n in range(Nt):
-    T_new = T.copy()
-    for i in range(1, Ny-1):
-        for j in range(1, Nx-1):
-            T_new[i, j] = T[i, j] + alpha * dt * (
-                (T[i+1, j] - 2*T[i, j] + T[i-1, j]) / dx**2 +
-                (T[i, j+1] - 2*T[i, j] + T[i, j-1]) / dy**2
-            )
-    update_right_boundary(T_new, n*dt)
-    T = T_new
+# Main simulation loop
+for n in range(nt):
+    t = n * dt
+    T_old = T.copy()
 
-# Graficar la temperatura en el dominio
-plt.imshow(T, extent=[0, Lx, 0, Ly], origin='lower', aspect='auto', cmap='coolwarm')
-plt.colorbar(label='Temperatura (°C)')
-plt.xlabel('Largo del dominio (m)')
-plt.ylabel('Ancho del dominio (m)')
-plt.title('Distribución de temperatura en el dominio')
+    if t % 1 == 0:
+
+        total_cells = nx * ny
+        ice_cells = np.sum(T < aKelvin(0))
+        water_cells = np.sum(T > aKelvin(0))
+        ice_percentage = (ice_cells / total_cells) * 100
+        water_percentage = (water_cells / total_cells) * 100
+        print(f"Time: {t:.1f} s - Ice: {ice_percentage:.2f}%, Water: {water_percentage:.2f}%")
+
+        plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000], vmin=aKelvin(-10), vmax=aKelvin(85))
+        plt.colorbar(label="Temperature (K)")
+        plt.title("Temperature Distribution After Seconds")
+        plt.xlabel("x (mm)")
+        plt.ylabel("y (mm)")
+        plt.show()
+
+    for i in range(1, nx - 1):
+        for j in range(1, ny - 1):
+            # Thermal diffusivity based on phase
+            if T_old[i, j] < aKelvin(0):
+                alpha = alpha_ice
+                k = k_ice
+                c = c_ice
+                rho = rho_ice
+            else:
+                alpha = alpha_water
+                k = k_water
+                c = c_water
+                rho = rho_water
+
+            # Finite difference update
+            d2T_dx2 = (T_old[i+1, j] - 2 * T_old[i, j] + T_old[i-1, j]) / dx**2
+            d2T_dy2 = (T_old[i, j+1] - 2 * T_old[i, j] + T_old[i, j-1]) / dy**2
+
+            T[i,j] = T_old[i,j] + alpha * dt * (d2T_dx2 + d2T_dy2)
+            
+    # Apply boundary conditions
+    T[0, :] = T[1, :]  # Left (insulated)
+    T[-1, :] = boundary_condition_right(t)  # Right (changing temperature)
+    T[:, 0] = T[:, 1]  # Bottom (insulated)
+    T[:, -1] = T[:, -2]  # Top (insulated)
+
+# Plot final temperature distribution
+plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000], vmin=aKelvin(-10), vmax=aKelvin(85))
+plt.colorbar(label="Temperature (K)")
+plt.title("Temperature Distribution After 100 Seconds")
+plt.xlabel("x (mm)")
+plt.ylabel("y (mm)")
 plt.show()

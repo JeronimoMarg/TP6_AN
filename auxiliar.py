@@ -11,7 +11,7 @@ def aCelsius(T):
 dx = 0.00025  # spatial step (0.1 mm)
 dy = 0.00025
 dt = 0.1    # time step (s)
-total_time = 100  # total simulation time (s)
+total_time = 300  # total simulation time (s)
 x_length = 0.01  # domain length in x (10 mm)
 y_length = 0.001  # domain length in y (1 mm)
 
@@ -36,37 +36,39 @@ nt = int(total_time / dt)
 T = np.full((nx, ny), aKelvin(-10))
 
 # Enthalpy field
-H = np.full((nx, ny), rho_ice * c_ice * (aKelvin(-10)))
+H = np.full((nx, ny), rho_ice * c_ice * aKelvin(-10))
 
 # Boundary condition on the right side
 def boundary_condition_right(t):
-    if t < 10:
-        aux = -10 + (95 * t / 10)  # Linear increase from -10 to 85
-        return aKelvin(aux)
-    else:
+    if (t > 10):
         return aKelvin(85)
+    else:
+        return aKelvin(-10 + (95 * t / 10))  # Rampa de -10°C a 85°C
 
 # Main simulation loop
 for n in range(nt):
     t = n * dt
     T_old = T.copy()
 
-    if 1:
+    total_cells = nx * ny
+    ice_cells = np.sum(T < aKelvin(0))
+    water_cells = np.sum(T > aKelvin(0))
+    print(ice_cells)
+    print (water_cells)
+    ice_percentage = (ice_cells / total_cells) * 100
+    water_percentage = (water_cells / total_cells) * 100
+    print(f"Time: {t:.1f} s - Ice: {ice_percentage:.2f}%, Water: {water_percentage:.2f}%")
 
-        total_cells = nx * ny
-        ice_cells = np.sum(T < aKelvin(0))
-        water_cells = np.sum(T > aKelvin(0))
-        ice_percentage = (ice_cells / total_cells) * 100
-        water_percentage = (water_cells / total_cells) * 100
-        print(f"Time: {t:.1f} s - Ice: {ice_percentage:.2f}%, Water: {water_percentage:.2f}%")
-
-        plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000], vmin=aKelvin(-10), vmax=aKelvin(85))
+    # Plot every second
+    if t % 1 == 0:  # Graficar cada 1 segundo
+        plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
         plt.colorbar(label="Temperature (K)")
-        plt.title("Temperature Distribution After Seconds")
+        plt.title(f"Temperature Distribution at t = {t:.1f} s")
         plt.xlabel("x (mm)")
         plt.ylabel("y (mm)")
         plt.show()
 
+    # Update the temperature field
     for i in range(1, nx - 1):
         for j in range(1, ny - 1):
             # Thermal diffusivity based on phase
@@ -87,21 +89,21 @@ for n in range(nt):
             H[i, j] += rho * c * alpha * (d2T_dx2 + d2T_dy2) * dt
 
             # Convert enthalpy back to temperature
-            if H[i, j] < aKelvin(0):
+            if H[i, j] < rho_ice * c_ice * aKelvin(0):  # Solid (ice)
                 T[i, j] = H[i, j] / (rho_ice * c_ice)
-            elif H[i, j] > aKelvin(0):
+            elif H[i, j] > rho_water * c_water * aKelvin(0):  # Liquid (water)
                 T[i, j] = H[i, j] / (rho_water * c_water)
-            else:
-                T[i, j] = aKelvin(0)  # Phase change
+            else:  # Fusion
+                T[i, j] = aKelvin(0)
 
     # Apply boundary conditions
-    T[-1, :] = boundary_condition_right(t)  # Right (changing temperature)
     T[0, :] = T[1, :]  # Left (insulated)
+    T[-1, :] = boundary_condition_right(t)  # Right (changing temperature)
     T[:, 0] = T[:, 1]  # Bottom (insulated)
     T[:, -1] = T[:, -2]  # Top (insulated)
 
-# Plot final temperature distribution
-plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000], vmin=aKelvin(-10), vmax=aKelvin(85))
+# Final temperature distribution
+plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
 plt.colorbar(label="Temperature (K)")
 plt.title("Temperature Distribution After 100 Seconds")
 plt.xlabel("x (mm)")
