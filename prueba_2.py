@@ -22,7 +22,7 @@ c_ice = 2100  # specific heat of ice (J/kg*K)
 c_water = 4186  # specific heat of water (J/kg*K)
 k_ice = 1.6  # thermal conductivity of ice (W/m*K)
 k_water = 0.6  # thermal conductivity of water (W/m*K)
-h_fusion = 334  # latent heat of fusion (J/kg)
+h_fusion = 334000  # latent heat of fusion (J/kg)
 
 alpha_ice = k_ice / (rho_ice * c_ice)
 alpha_water = k_water / (rho_water * c_water)

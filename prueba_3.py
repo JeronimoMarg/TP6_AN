@@ -20,7 +20,7 @@ T_right_end = 85  # Temperatura final en el borde derecho (°C)
 heating_time = 10  # Tiempo de calentamiento en el borde derecho (s)
 
 # Propiedades temporales
-dt = 1  # Paso temporal (s)
+dt = 0.1  # Paso temporal (s)
 time_limit = 300  # Tiempo máximo de simulación (s)
 
 # Inicialización de variables
@@ -43,9 +43,6 @@ def T_right(t):
         return T_right_end
 
 # Simulación por diferencias finitas
-history = []  # Historial de temperaturas para visualización
-snapshot_times = np.arange(0, time_limit + 1, 100)  # Tiempos de captura
-snapshots = []  # Almacenar perfiles en tiempos específicos
 while time < time_limit:
     # Crear una copia para actualizar la temperatura
     T_new = T.copy()
@@ -71,12 +68,6 @@ while time < time_limit:
 
     # Actualizar el perfil de temperatura
     T = T_new
-    history.append(T.copy())
-
-    # Almacenar instantáneas en tiempos específicos
-    if time in snapshot_times:
-        snapshots.append((time, T.copy()))
-
     time += dt
 
     # Verificar si todos los nodos se han derretido
@@ -86,15 +77,11 @@ while time < time_limit:
 # Imprimir el tiempo necesario para derretir
 print(f"Tiempo total para derretir la lámina: {time:.2f} segundos")
 
-# Graficar la distribución de temperatura en los tiempos específicos usando imshow
-for snapshot_time, snapshot_T in snapshots:
-    plt.imshow(
-        np.tile(snapshot_T, (10, 1)), cmap="coolwarm", origin="lower",
-        extent=[0, total_length * 1000, 0, total_width * 1000],
-        vmin=T_initial, vmax=T_right_end
-    )
-    plt.colorbar(label="Temperatura (°C)")
-    plt.title(f"Distribución de temperatura a t = {snapshot_time:.0f} s")
-    plt.xlabel("Posición x (mm)")
-    plt.ylabel("Posición y (mm)")
-    plt.show()
+# Visualización final del perfil de temperatura
+plt.plot(x, T, label="Temperatura final")
+plt.xlabel("Posición (m)")
+plt.ylabel("Temperatura (°C)")
+plt.title("Perfil de temperatura al final de la simulación")
+plt.legend()
+plt.grid()
+plt.show()

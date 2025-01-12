@@ -1,111 +1,51 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def aKelvin(T):
-    return T + 273.15
-
-def aCelsius(T):
-    return T - 273.15
-
 # Parameters
-dx = 0.00025  # spatial step (0.1 mm)
-dy = 0.00025
-dt = 0.1    # time step (s)
-total_time = 300  # total simulation time (s)
-x_length = 0.01  # domain length in x (10 mm)
-y_length = 0.001  # domain length in y (1 mm)
+L = 0.01  # Length of the sheet in meters (10 mm)
+h = 0.001  # Spatial step in meters (1 mm)
+dt = 0.1  # Time step
+time = 100  # Total simulation time in seconds
+alpha = 1  # Thermal diffusivity (example value, adjust as needed)
 
-# Thermal properties
-rho_ice = 917  # density of ice (kg/m^3)
-rho_water = 997  # density of water (kg/m^3)
-c_ice = 2100  # specific heat of ice (J/kg*K)
-c_water = 4186  # specific heat of water (J/kg*K)
-k_ice = 1.6  # thermal conductivity of ice (W/m*K)
-k_water = 0.6  # thermal conductivity of water (W/m*K)
-h_fusion = 334  # latent heat of fusion (J/kg)
+def stencil(n):
+    A = -2 * np.eye(n)
+    for j in range(n - 1):
+        A[j, j + 1] = 1
+        A[j + 1, j] = 1
+    return A
 
-alpha_ice = k_ice / (rho_ice * c_ice)
-alpha_water = k_water / (rho_water * c_water)
-
-# Discretize the domain
-nx = int(x_length / dx) + 1
-ny = int(y_length / dy) + 1
-nt = int(total_time / dt)
-
-# Initialize temperature field (in Celsius)
-T = np.full((nx, ny), aKelvin(-10))
-
-# Enthalpy field
-H = np.full((nx, ny), rho_ice * c_ice * aKelvin(-10))
-
-# Boundary condition on the right side
 def boundary_condition_right(t):
-    if (t > 10):
-        return aKelvin(85)
+    if t < 10:
+        return -10 + (95 * t / 10)
     else:
-        return aKelvin(-10 + (95 * t / 10))  # Rampa de -10°C a 85°C
+        return 85
 
-# Main simulation loop
-for n in range(nt):
-    t = n * dt
-    T_old = T.copy()
+def explicit(h, dt, time, L):
+    t = 0.0
+    n = int(L / h) + 1  # Number of sections within the 1D sheet
+    x = np.linspace(0, L, n)
+    T = np.full(n, -10.0)  # Initial temperature in °C
+    sol = []
+    sol.append(T.copy())
+    mat = alpha * dt * stencil(n) / h / h + np.eye(n)
+    while t < time:
+        T = np.dot(mat, T)
+        T[0] = T[1]  # Left boundary condition (insulated)
+        T[-1] = boundary_condition_right(t)  # Right boundary condition (changing temperature)
+        sol.append(T.copy())
+        t += dt
+    return sol
 
-    total_cells = nx * ny
-    ice_cells = np.sum(T < aKelvin(0))
-    water_cells = np.sum(T > aKelvin(0))
-    print(ice_cells)
-    print (water_cells)
-    ice_percentage = (ice_cells / total_cells) * 100
-    water_percentage = (water_cells / total_cells) * 100
-    print(f"Time: {t:.1f} s - Ice: {ice_percentage:.2f}%, Water: {water_percentage:.2f}%")
+# Run the simulation
+sol = explicit(h, dt, time, L)
 
-    # Plot every second
-    if t % 1 == 0:  # Graficar cada 1 segundo
-        plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
-        plt.colorbar(label="Temperature (K)")
-        plt.title(f"Temperature Distribution at t = {t:.1f} s")
-        plt.xlabel("x (mm)")
-        plt.ylabel("y (mm)")
-        plt.show()
-
-    # Update the temperature field
-    for i in range(1, nx - 1):
-        for j in range(1, ny - 1):
-            # Thermal diffusivity based on phase
-            if T_old[i, j] < aKelvin(0):
-                alpha = alpha_ice
-                k = k_ice
-                c = c_ice
-                rho = rho_ice
-            else:
-                alpha = alpha_water
-                k = k_water
-                c = c_water
-                rho = rho_water
-
-            # Finite difference update
-            d2T_dx2 = (T_old[i+1, j] - 2 * T_old[i, j] + T_old[i-1, j]) / dx**2
-            d2T_dy2 = (T_old[i, j+1] - 2 * T_old[i, j] + T_old[i, j-1]) / dy**2
-            H[i, j] += rho * c * alpha * (d2T_dx2 + d2T_dy2) * dt
-
-            # Convert enthalpy back to temperature
-            if H[i, j] < rho_ice * c_ice * aKelvin(0):  # Solid (ice)
-                T[i, j] = H[i, j] / (rho_ice * c_ice)
-            elif H[i, j] > rho_water * c_water * aKelvin(0):  # Liquid (water)
-                T[i, j] = H[i, j] / (rho_water * c_water)
-            else:  # Fusion
-                T[i, j] = aKelvin(0)
-
-    # Apply boundary conditions
-    T[0, :] = T[1, :]  # Left (insulated)
-    T[-1, :] = boundary_condition_right(t)  # Right (changing temperature)
-    T[:, 0] = T[:, 1]  # Bottom (insulated)
-    T[:, -1] = T[:, -2]  # Top (insulated)
-
-# Final temperature distribution
-plt.imshow(T.T, cmap="coolwarm", origin="lower", extent=[0, x_length * 1000, 0, y_length * 1000])
-plt.colorbar(label="Temperature (K)")
-plt.title("Temperature Distribution After 100 Seconds")
-plt.xlabel("x (mm)")
-plt.ylabel("y (mm)")
+# Plot the results
+plt.ion()
+plt.xlabel('Position (m)')
+plt.ylabel('Temperature (°C)')
+plt.title('Temperature Distribution Over Time')
+for T in sol:
+    plt.plot(np.linspace(0, L, len(T)), T)
+    plt.pause(0.1)
 plt.show()

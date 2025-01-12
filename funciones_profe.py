@@ -1,4 +1,3 @@
-
 import numpy as np
 import matplotlib.pyplot as plt
 L=1.0
@@ -10,7 +9,10 @@ alpha=0.5
 #Funciones del profe
 
 def stencil(n):
-    A=np.diag(-2*np.ones(n))+np.diag(np.ones(n-1),1)+np.diag(np.ones(n-1),-1)
+    A = -2 * np.eye(n)
+    for j in range (n-1):
+        A[j,j+1]=1
+        A[j+1,j]=1
     return A
 
 def exact(h,dt,time,L):
@@ -65,11 +67,12 @@ sol=exact(h,dt,time,L)
 sol1=explicit(h,dt,time,L)
 sol2=implicit(h,dt,time,L)
 
-plt.ion()
-plt.show()
 for n in range(int(time/dt/10)):
-    plt.plot(sol1[10*n])
+    print("Plotea")
+    plt.plot(sol2[10*n])
+plt.show()
 
+'''
 error1=[]
 error2=[]
 for n in range (int(time/dt)):
@@ -80,4 +83,4 @@ tiempo=np.arange(0,time,dt)
 plt.plot(tiempo,error1,label='Error Explicito')
 plt.plot(tiempo,error2,label='Error Implicito')
 plt.legend()
-
+'''
