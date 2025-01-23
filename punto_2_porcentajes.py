@@ -46,6 +46,12 @@ def plot_temperature_line(T, t, x_length, y_length):
     temperature_profile = T[:, middle_y]
     plt.plot(np.linspace(0, x_length * 1000, len(temperature_profile)), aCelsius(temperature_profile), label=f"T = {t:.1f}s")
 
+def calculate_percentages(T):
+    total_cells = T.size
+    ice_cells = np.sum(T < aKelvin(0))
+    water_cells = total_cells - ice_cells
+    return (ice_cells/total_cells*100, water_cells/total_cells*100)
+
 # Simulación
 for n in range(nt):
     t = n * dt
@@ -81,14 +87,10 @@ for n in range(nt):
     T[:, 0] = T[:, 1]
     T[:, -1] = T[:, -2]
 
-    # Graficar cada 50 segundos
-    if n % int(10 / dt) == 0:
-        plot_temperature_line(T, t, x_length, y_length)
-
-# Ajustar gráfico
-plt.xlabel("Distancia (mm)")
-plt.ylabel("Temperatura (°C)")
-plt.title("Distribución de temperatura con cambio de fase")
-plt.legend()
-plt.grid(True)
-plt.show()
+    # Mostrar porcentajes cada 10 segundos
+    if n % int(10/dt) == 0:
+        ice_percent, water_percent = calculate_percentages(T)
+        print(f"Tiempo: {t:.1f}s")
+        print(f"Hielo: {ice_percent:.1f}%")
+        print(f"Agua: {water_percent:.1f}%")
+        print("-" * 20)
