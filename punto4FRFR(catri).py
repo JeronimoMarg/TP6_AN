@@ -178,6 +178,7 @@ def simular_cambio_fase():
     # Realizar la simulación paso a paso y buscar el tiempo de demora
     tiempo_demora = None
     temperaturas_promedio = []
+    fraccion_hielo_historial = []
     
     # Crear una figura más grande para mejor visualización
     plt.figure(figsize=(10, 8))
@@ -191,13 +192,14 @@ def simular_cambio_fase():
         # Medir la fracción de hielo en el corazón
         fraccion_hielo = np.mean(ice_fraction[corazon_left:corazon_right, corazon_bottom:corazon_top])
         
-        ''' CALCULO DE FRACCION DE HIELO SEGUN TEMPERATURA
+        #CALCULO DE FRACCION DE HIELO SEGUN TEMPERATURA
         cant_temps = points_per_mm ** 2
         temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] < TEMP_MELT)
-        temp_sobre_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] > TEMP_MELT)
-        print(f"Cantidad total de temps dentro del corazon: {cant_temps:.2f}, Cantidad de temps bajo 0: {temp_bajo_0:.2f}, Cantidad de temp sobre 0: {temp_sobre_0:.2f}")
-        fraccion_hielo = temp_bajo_0 / cant_temps
-        '''
+        #print(f"Cantidad total de temps dentro del corazon: {cant_temps:.2f}, Cantidad de temps bajo 0: {temp_bajo_0:.2f}, Cantidad de temp sobre 0: {temp_sobre_0:.2f}")
+        fraccion_hielo_aux = temp_bajo_0 / cant_temps
+        fraccion_hielo_historial.append(fraccion_hielo_aux)
+
+        #TEMPERATURAS PROMEDIO EN EL CORAZON
         temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
         temp_promedio_corazon = np.mean(temp_corazon)
         temperaturas_promedio.append(temp_promedio_corazon)
@@ -232,6 +234,18 @@ def simular_cambio_fase():
     plt.xlabel('Tiempo (s)')
     plt.ylabel('Temperatura promedio (°C)')
     plt.title('Evolución de la temperatura promedio del corazón de hielo')
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+    # Graficar la evolución de la fraccion de hielo
+    plt.figure(figsize=(8, 6))
+    tiempos = np.arange(len(fraccion_hielo_historial)) * Dt
+    plt.plot(tiempos, fraccion_hielo_historial, label='Fraccion de hielo del corazon de hielo')
+    plt.xlabel('Tiempo (s)')
+    plt.ylabel('Fraccion de hielo')
+    plt.title('Evolución de la fraccion de hielo del corazon de hielo')
     plt.legend()
     plt.grid()
     plt.tight_layout()

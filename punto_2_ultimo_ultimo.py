@@ -46,6 +46,8 @@ def plot_temperature_line(T, t, x_length, y_length):
     temperature_profile = T[:, middle_y]
     plt.plot(np.linspace(0, x_length * 1000, len(temperature_profile)), aCelsius(temperature_profile), label=f"T = {t:.1f}s")
 
+temperaturas_promedio = []
+
 # Simulación
 for n in range(nt):
     t = n * dt
@@ -81,6 +83,8 @@ for n in range(nt):
     T[:, 0] = T[:, 1]
     T[:, -1] = T[:, -2]
 
+    temperaturas_promedio.append(np.mean(aCelsius(T)))
+
     # Graficar cada 50 segundos
     if n % int(10 / dt) == 0:
         plot_temperature_line(T, t, x_length, y_length)
@@ -91,4 +95,15 @@ plt.ylabel("Temperatura (°C)")
 plt.title("Distribución de temperatura con cambio de fase")
 plt.legend()
 plt.grid(True)
+plt.show()
+
+plt.figure(figsize=(8, 6))
+tiempos = np.arange(len(temperaturas_promedio)) * dt
+plt.plot(tiempos, temperaturas_promedio, label='Temperatura promedio del corazón de hielo')
+plt.xlabel('Tiempo (s)')
+plt.ylabel('Temperatura promedio (°C)')
+plt.title('Evolucion de la temperatura promedio del dominio')
+plt.legend()
+plt.grid()
+plt.tight_layout()
 plt.show()
