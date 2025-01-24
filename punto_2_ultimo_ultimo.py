@@ -47,6 +47,7 @@ def plot_temperature_line(T, t, x_length, y_length):
     plt.plot(np.linspace(0, x_length * 1000, len(temperature_profile)), aCelsius(temperature_profile), label=f"T = {t:.1f}s")
 
 temperaturas_promedio = []
+fraccion_hielo_historial = []
 
 # Simulación
 for n in range(nt):
@@ -85,6 +86,12 @@ for n in range(nt):
 
     temperaturas_promedio.append(np.mean(aCelsius(T)))
 
+    total_temps = nx * ny
+    total_temps_bajo0 = np.sum(T < aKelvin(0))
+    fraccion = total_temps_bajo0 / total_temps
+    print(fraccion)
+    fraccion_hielo_historial.append(fraccion)
+
     # Graficar cada 50 segundos
     if n % int(10 / dt) == 0:
         plot_temperature_line(T, t, x_length, y_length)
@@ -103,6 +110,18 @@ plt.plot(tiempos, temperaturas_promedio, label='Temperatura promedio del corazó
 plt.xlabel('Tiempo (s)')
 plt.ylabel('Temperatura promedio (°C)')
 plt.title('Evolucion de la temperatura promedio del dominio')
+plt.legend()
+plt.grid()
+plt.tight_layout()
+plt.show()
+
+    # Graficar la evolución de la fraccion de hielo
+plt.figure(figsize=(8, 6))
+tiempos = np.arange(len(fraccion_hielo_historial)) * dt
+plt.plot(tiempos, fraccion_hielo_historial, label='Fraccion de hielo del corazon de hielo')
+plt.xlabel('Tiempo (s)')
+plt.ylabel('Fraccion de hielo')
+plt.title('Evolución de la fraccion de hielo del corazon de hielo')
 plt.legend()
 plt.grid()
 plt.tight_layout()
