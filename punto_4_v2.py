@@ -17,7 +17,7 @@ RHO_ICE = 918
 C_WATER = 4186
 C_ICE = 2090
 
-points_per_mm = 16
+points_per_mm = 8
 Nx = int(L * 1000 * points_per_mm)
 Ny = int(H * 1000 * points_per_mm)
 Nw = int(W * 1000 * points_per_mm)
@@ -30,10 +30,10 @@ k_ice = 2.24
 alpha_ice = k_ice / (RHO_ICE * C_ICE)
 alpha_max = max(alpha_water, alpha_ice)
 
-safety_factor = 0.05
-Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
-#Dt = 0.0001
-TOTAL_TIME = 1  # Tiempo total en segundos
+safety_factor = 0.1
+#Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
+Dt = 0.0001
+TOTAL_TIME = 10  # Tiempo total en segundos
 steps = int(TOTAL_TIME / Dt)
 
 @jit(nopython=True)
@@ -100,16 +100,21 @@ def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
 
                 # Obtener propiedades térmicas
                 k, rho, c = obtener_propiedades_termicas(temp[i,j], ice_fraction[i,j])
+                alpha = k / (rho * c)
 
                 # Derivadas espaciales para el cálculo de la energía
                 d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
                 d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
 
                 # Cálculo de la energía
-                energy_new[i,j] = energy[i,j] + (k * (d2T_dx2 + d2T_dy2) * Dt)
+                energy_new[i,j] = energy[i,j] + (rho * c * alpha * (d2T_dx2 + d2T_dy2) * Dt)
 
-                # Actualización de la temperatura
-                temp_new[i,j] = energy_new[i,j] / (rho * c)
+                if energy_new[i,j] < 0:
+                    temp_new[i,j] = energy_new[i,j] / (RHO_ICE * C_ICE) + T_melt
+                elif energy_new[i,j] > RHO_WATER * CALOR_LATENTE_FUSION:
+                    temp_new[i,j] = (energy_new[i,j] - RHO_WATER * CALOR_LATENTE_FUSION) / (RHO_WATER * C_WATER) + T_melt
+                else:
+                    temp_new[i,j] = T_melt
 
     # Aplicar condiciones de borde de aislamiento térmico
     temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
@@ -209,7 +214,7 @@ def simular_cambio_fase():
             tiempo_demora = step * Dt
 
         # Mostrar el cambio de fase en la simulación cada cierto número de pasos
-        if step % 1000 == 0:  # Aumentar o disminuir este número para ver más o menos frames
+        if step % 10000 == 0:  # Aumentar o disminuir este número para ver más o menos frames
             # Actualizar la máscara de temperatura
             temp_masked = np.ma.masked_array(temp, ~mask)
             

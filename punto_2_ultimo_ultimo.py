@@ -89,7 +89,7 @@ for n in range(nt):
     total_temps = nx * ny
     total_temps_bajo0 = np.sum(T < aKelvin(0))
     fraccion = total_temps_bajo0 / total_temps
-    print(fraccion)
+    #print(fraccion)
     fraccion_hielo_historial.append(fraccion)
 
     # Graficar cada 50 segundos
@@ -106,7 +106,7 @@ plt.show()
 
 plt.figure(figsize=(8, 6))
 tiempos = np.arange(len(temperaturas_promedio)) * dt
-plt.plot(tiempos, temperaturas_promedio, label='Temperatura promedio del corazón de hielo')
+plt.plot(tiempos, temperaturas_promedio, label='Temperatura promedio.')
 plt.xlabel('Tiempo (s)')
 plt.ylabel('Temperatura promedio (°C)')
 plt.title('Evolucion de la temperatura promedio del dominio')
@@ -118,7 +118,7 @@ plt.show()
     # Graficar la evolución de la fraccion de hielo
 plt.figure(figsize=(8, 6))
 tiempos = np.arange(len(fraccion_hielo_historial)) * dt
-plt.plot(tiempos, fraccion_hielo_historial, label='Fraccion de hielo del corazon de hielo')
+plt.plot(tiempos, fraccion_hielo_historial, label='Fraccion de hielo.')
 plt.xlabel('Tiempo (s)')
 plt.ylabel('Fraccion de hielo')
 plt.title('Evolución de la fraccion de hielo del corazon de hielo')
