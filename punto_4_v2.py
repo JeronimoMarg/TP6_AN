@@ -31,8 +31,8 @@ alpha_ice = k_ice / (RHO_ICE * C_ICE)
 alpha_max = max(alpha_water, alpha_ice)
 
 safety_factor = 0.1
-#Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
-Dt = 0.0001
+Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
+#Dt = 0.001
 TOTAL_TIME = 10  # Tiempo total en segundos
 steps = int(TOTAL_TIME / Dt)
 
@@ -77,7 +77,7 @@ def aplicar_condiciones_borde_aislamiento(temp, mask):
     return temp
 
 @jit(nopython=True)
-def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
+def calcular_paso_vieja(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
     """Función para actualizar las temperaturas y energías en cada paso de tiempo."""
     Nx, Ny = temp.shape
     temp_new = np.copy(temp)
@@ -106,19 +106,66 @@ def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
                 d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
                 d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
 
-                # Cálculo de la energía
-                energy_new[i,j] = energy[i,j] + (rho * c * alpha * (d2T_dx2 + d2T_dy2) * Dt)
-
-                if energy_new[i,j] < 0:
-                    temp_new[i,j] = energy_new[i,j] / (RHO_ICE * C_ICE) + T_melt
-                elif energy_new[i,j] > RHO_WATER * CALOR_LATENTE_FUSION:
-                    temp_new[i,j] = (energy_new[i,j] - RHO_WATER * CALOR_LATENTE_FUSION) / (RHO_WATER * C_WATER) + T_melt
-                else:
-                    temp_new[i,j] = T_melt
+                delta_T = alpha * (d2T_dx2 + d2T_dy2) * Dt
+                temp_new[i,j] = temp[i,j] + delta_T
+                energy_new[i,j] = rho * c * temp_new[i,j]
 
     # Aplicar condiciones de borde de aislamiento térmico
     temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
 
+    return temp_new, energy_new, ice_fraction
+
+@jit(nopython=True)
+def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
+    Nx, Ny = temp.shape
+    temp_new = np.copy(temp)
+    energy_new = np.copy(energy)
+    ice_fraction = np.ones_like(temp)
+
+    for i in range(1, Nx-1):
+        for j in range(1, Ny-1):
+            if mask[i, j]:
+                # Calcular energía disponible para el cambio de fase
+                energia_disponible = energy[i, j]
+
+                # Energía requerida para llevar el hielo de -30°C a 0°C (calor sensible)
+                E_sensible_max = RHO_ICE * C_ICE * (T_melt - TEMP_INITIAL_ICE)
+                
+                # Energía requerida para fundir completamente el hielo (calor latente)
+                E_latente_max = RHO_ICE * L_fusion
+
+                # Etapa 1: Calentamiento del hielo (T < 0°C)
+                if energia_disponible < E_sensible_max:
+                    temp_new[i,j] = TEMP_INITIAL_ICE + (energia_disponible / (RHO_ICE * C_ICE))
+                    ice_fraction[i,j] = 1.0  # Todo es hielo
+
+                # Etapa 2: Fusión (T = 0°C, calor latente)
+                elif energia_disponible < E_sensible_max + E_latente_max:
+                    temp_new[i,j] = T_melt  # Temperatura constante
+                    energia_restante = energia_disponible - E_sensible_max
+                    ice_fraction[i,j] = 1.0 - (energia_restante / E_latente_max)
+
+                # Etapa 3: Calentamiento del agua (T > 0°C)
+                else:
+                    energia_restante = energia_disponible - (E_sensible_max + E_latente_max)
+                    temp_new[i,j] = T_melt + (energia_restante / (RHO_WATER * C_WATER))
+                    ice_fraction[i,j] = 0.0  # Todo es agua
+
+                # Obtener propiedades térmicas según la fracción de hielo actual
+                k = k_ice * ice_fraction[i,j] + k_water * (1 - ice_fraction[i,j])
+                rho = RHO_ICE * ice_fraction[i,j] + RHO_WATER * (1 - ice_fraction[i,j])
+                c = C_ICE * ice_fraction[i,j] + C_WATER * (1 - ice_fraction[i,j])
+
+                # Actualizar energía usando la ecuación del calor (difusión)
+                alpha = k / (rho * c)
+                d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
+                d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
+                delta_energy = alpha * (d2T_dx2 + d2T_dy2) * Dt * rho * c
+
+                energy_new[i,j] = energy[i,j] + delta_energy
+
+    # Aplicar condiciones de borde
+    temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
     return temp_new, energy_new, ice_fraction
 
 def simular_cambio_fase():
@@ -199,10 +246,12 @@ def simular_cambio_fase():
         
         #CALCULO DE FRACCION DE HIELO SEGUN TEMPERATURA
         cant_temps = points_per_mm ** 2
-        temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] < TEMP_MELT)
+        temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] <= TEMP_MELT)
         #print(f"Cantidad total de temps dentro del corazon: {cant_temps:.2f}, Cantidad de temps bajo 0: {temp_bajo_0:.2f}, Cantidad de temp sobre 0: {temp_sobre_0:.2f}")
         fraccion_hielo_aux = temp_bajo_0 / cant_temps
         fraccion_hielo_historial.append(fraccion_hielo_aux)
+
+        #fraccion_hielo = fraccion_hielo_aux
 
         #TEMPERATURAS PROMEDIO EN EL CORAZON
         temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
@@ -214,7 +263,7 @@ def simular_cambio_fase():
             tiempo_demora = step * Dt
 
         # Mostrar el cambio de fase en la simulación cada cierto número de pasos
-        if step % 10000 == 0:  # Aumentar o disminuir este número para ver más o menos frames
+        if 0:  # Aumentar o disminuir este número para ver más o menos frames
             # Actualizar la máscara de temperatura
             temp_masked = np.ma.masked_array(temp, ~mask)
             

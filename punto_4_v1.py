@@ -31,9 +31,9 @@ alpha_ice = k_ice / (RHO_ICE * C_ICE)
 alpha_max = max(alpha_water, alpha_ice)
 
 safety_factor = 0.1
-#Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
-Dt = 0.0001
-TOTAL_TIME = 50  # Tiempo total en segundos
+Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
+#Dt = 0.001
+TOTAL_TIME = 10  # Tiempo total en segundos
 steps = int(TOTAL_TIME / Dt)
 
 @jit(nopython=True)
@@ -194,10 +194,12 @@ def simular_cambio_fase():
         
         #CALCULO DE FRACCION DE HIELO SEGUN TEMPERATURA
         cant_temps = points_per_mm ** 2
-        temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] < TEMP_MELT)
+        temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] <= TEMP_MELT)
         #print(f"Cantidad total de temps dentro del corazon: {cant_temps:.2f}, Cantidad de temps bajo 0: {temp_bajo_0:.2f}, Cantidad de temp sobre 0: {temp_sobre_0:.2f}")
         fraccion_hielo_aux = temp_bajo_0 / cant_temps
         fraccion_hielo_historial.append(fraccion_hielo_aux)
+
+        #fraccion_hielo = fraccion_hielo_aux
 
         #TEMPERATURAS PROMEDIO EN EL CORAZON
         temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
