@@ -8,7 +8,7 @@ L = 21e-3  # Longitud total (10mm + 1mm + 10mm)
 W = 1e-3   # Ancho de cada segmento
 H = 11e-3  # Altura total (10mm + 1mm)
 
-TEMP_INITIAL_ICE = -30
+TEMP_INITIAL_ICE = -10
 TEMP_INITIAL_WATER = 20
 TEMP_MELT = 0
 CALOR_LATENTE_FUSION = 334000
@@ -106,9 +106,14 @@ def calcular_paso_vieja(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
                 d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
                 d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
 
-                delta_T = alpha * (d2T_dx2 + d2T_dy2) * Dt
-                temp_new[i,j] = temp[i,j] + delta_T
-                energy_new[i,j] = rho * c * temp_new[i,j]
+                # Cálculo de la energía
+                energy_new[i,j] = energy[i,j] + (rho * c * alpha * (d2T_dx2 + d2T_dy2) * Dt)
+                if energy_new[i,j] < 0:
+                    temp_new[i,j] = energy_new[i,j] / (RHO_ICE * C_ICE) + T_melt
+                elif energy_new[i,j] > RHO_WATER * CALOR_LATENTE_FUSION:
+                    temp_new[i,j] = (energy_new[i,j] - RHO_WATER * CALOR_LATENTE_FUSION) / (RHO_WATER * C_WATER) + T_melt
+                else:
+                    temp_new[i,j] = T_melt
 
     # Aplicar condiciones de borde de aislamiento térmico
     temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
@@ -211,7 +216,6 @@ def simular_cambio_fase():
     temp = np.full((Nx, Ny), TEMP_INITIAL_WATER)
     energy = np.zeros((Nx, Ny))
 
-    # Establecer las condiciones iniciales
     for i in range(Nx):
         for j in range(Ny):
             if mask[i, j]:
@@ -231,15 +235,18 @@ def simular_cambio_fase():
     tiempo_demora = None
     temperaturas_promedio = []
     fraccion_hielo_historial = []
-    
-    # Crear una figura más grande para mejor visualización
-    plt.figure(figsize=(10, 8))
+
+    fraccion_hielo = 1.0
+    fraccion_hielo_historial.append(fraccion_hielo)
+    temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
+    temp_promedio_corazon = np.mean(temp_corazon)
+    temperaturas_promedio.append(temp_promedio_corazon)
     
     # Crear una máscara para los valores que no queremos mostrar
     temp_masked = np.ma.masked_array(temp, ~mask)
 
     for step in range(steps):
-        temp, energy, ice_fraction = calcular_paso(temp, energy, mask, Dx, Dy, Dt, TEMP_MELT, CALOR_LATENTE_FUSION)
+        temp, energy, ice_fraction = calcular_paso_vieja(temp, energy, mask, Dx, Dy, Dt, TEMP_MELT, CALOR_LATENTE_FUSION)
         
         # Medir la fracción de hielo en el corazón
         fraccion_hielo = np.mean(ice_fraction[corazon_left:corazon_right, corazon_bottom:corazon_top])
@@ -249,9 +256,9 @@ def simular_cambio_fase():
         temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] <= TEMP_MELT)
         #print(f"Cantidad total de temps dentro del corazon: {cant_temps:.2f}, Cantidad de temps bajo 0: {temp_bajo_0:.2f}, Cantidad de temp sobre 0: {temp_sobre_0:.2f}")
         fraccion_hielo_aux = temp_bajo_0 / cant_temps
-        fraccion_hielo_historial.append(fraccion_hielo_aux)
 
         #fraccion_hielo = fraccion_hielo_aux
+        fraccion_hielo_historial.append(fraccion_hielo)
 
         #TEMPERATURAS PROMEDIO EN EL CORAZON
         temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
@@ -266,6 +273,9 @@ def simular_cambio_fase():
         if 0:  # Aumentar o disminuir este número para ver más o menos frames
             # Actualizar la máscara de temperatura
             temp_masked = np.ma.masked_array(temp, ~mask)
+
+            # Crear una figura más grande para mejor visualización
+            plt.figure(figsize=(10, 8))
             
             # Limpiar la figura anterior
             plt.clf()

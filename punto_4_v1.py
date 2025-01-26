@@ -180,9 +180,6 @@ def simular_cambio_fase():
     temperaturas_promedio = []
     fraccion_hielo_historial = []
     
-    # Crear una figura más grande para mejor visualización
-    plt.figure(figsize=(10, 8))
-    
     # Crear una máscara para los valores que no queremos mostrar
     temp_masked = np.ma.masked_array(temp, ~mask)
 
@@ -214,6 +211,9 @@ def simular_cambio_fase():
         if 0:  # Aumentar o disminuir este número para ver más o menos frames
             # Actualizar la máscara de temperatura
             temp_masked = np.ma.masked_array(temp, ~mask)
+
+            # Crear una figura más grande para mejor visualización
+            plt.figure(figsize=(10, 8))
             
             # Limpiar la figura anterior
             plt.clf()
