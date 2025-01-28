@@ -31,9 +31,9 @@ alpha_ice = k_ice / (RHO_ICE * C_ICE)
 alpha_max = max(alpha_water, alpha_ice)
 
 safety_factor = 0.1
-Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
-#Dt = 0.001
-TOTAL_TIME = 10  # Tiempo total en segundos
+#Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
+Dt = 0.001
+TOTAL_TIME = 30  # Tiempo total en segundos
 steps = int(TOTAL_TIME / Dt)
 
 @jit(nopython=True)
@@ -208,7 +208,7 @@ def simular_cambio_fase():
             tiempo_demora = step * Dt
 
         # Mostrar el cambio de fase en la simulación cada cierto número de pasos
-        if 0:  # Aumentar o disminuir este número para ver más o menos frames
+        if step % 1000 == 0:  # Aumentar o disminuir este número para ver más o menos frames
             # Actualizar la máscara de temperatura
             temp_masked = np.ma.masked_array(temp, ~mask)
 
@@ -222,7 +222,7 @@ def simular_cambio_fase():
             im = plt.imshow(temp_masked.T, cmap='coolwarm', interpolation='nearest',
                           vmin=TEMP_INITIAL_ICE, vmax=TEMP_INITIAL_WATER, extent=[0, L, 0, H*-1])
             plt.colorbar(im, label='Temperatura (°C)')
-            plt.title(f'Distribución de Temperatura - t = {step*Dt:.2f} s\nFracción de hielo en el corazón: {fraccion_hielo:.2%}')
+            plt.title(f'Distribución de Temperatura - step = {step:.2f} \nFracción de hielo en el corazón: {fraccion_hielo:.2%}')
             plt.xlabel('Posición X (mm)')
             plt.ylabel('Posición Y (mm)')
             plt.gca().invert_yaxis()

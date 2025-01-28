@@ -8,7 +8,7 @@ L = 21e-3  # Longitud total (10mm + 1mm + 10mm)
 W = 1e-3   # Ancho de cada segmento
 H = 11e-3  # Altura total (10mm + 1mm)
 
-TEMP_INITIAL_ICE = -10
+TEMP_INITIAL_ICE = -30
 TEMP_INITIAL_WATER = 20
 TEMP_MELT = 0
 CALOR_LATENTE_FUSION = 334000
@@ -17,7 +17,7 @@ RHO_ICE = 918
 C_WATER = 4186
 C_ICE = 2090
 
-points_per_mm = 8
+points_per_mm = 16
 Nx = int(L * 1000 * points_per_mm)
 Ny = int(H * 1000 * points_per_mm)
 Nw = int(W * 1000 * points_per_mm)
@@ -130,31 +130,24 @@ def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
     for i in range(1, Nx-1):
         for j in range(1, Ny-1):
             if mask[i, j]:
-                # Calcular energía disponible para el cambio de fase
-                energia_disponible = energy[i, j]
+                # Calcular energía disponible relativa al punto de fusión
+                energia_disponible = energy[i, j]  # Ya está ajustada en la inicialización
 
-                # Energía requerida para llevar el hielo de -30°C a 0°C (calor sensible)
-                E_sensible_max = RHO_ICE * C_ICE * (T_melt - TEMP_INITIAL_ICE)
-                
-                # Energía requerida para fundir completamente el hielo (calor latente)
-                E_latente_max = RHO_ICE * L_fusion
+                # Etapa 1: Calentamiento del hielo (desde -30°C a 0°C)
+                E_sensible_max = RHO_ICE * C_ICE * (TEMP_MELT - TEMP_INITIAL_ICE)  # 30°C * capacidad calorífica
 
-                # Etapa 1: Calentamiento del hielo (T < 0°C)
+                # Etapa 2: Fusión (calor latente)
+                E_latente_max = RHO_ICE * CALOR_LATENTE_FUSION  # Energía para fundir todo el hielo
+
                 if energia_disponible < E_sensible_max:
                     temp_new[i,j] = TEMP_INITIAL_ICE + (energia_disponible / (RHO_ICE * C_ICE))
-                    ice_fraction[i,j] = 1.0  # Todo es hielo
-
-                # Etapa 2: Fusión (T = 0°C, calor latente)
+                    ice_fraction[i,j] = 1.0
                 elif energia_disponible < E_sensible_max + E_latente_max:
-                    temp_new[i,j] = T_melt  # Temperatura constante
-                    energia_restante = energia_disponible - E_sensible_max
-                    ice_fraction[i,j] = 1.0 - (energia_restante / E_latente_max)
-
-                # Etapa 3: Calentamiento del agua (T > 0°C)
+                    temp_new[i,j] = TEMP_MELT
+                    ice_fraction[i,j] = 1.0 - (energia_disponible - E_sensible_max) / E_latente_max
                 else:
-                    energia_restante = energia_disponible - (E_sensible_max + E_latente_max)
-                    temp_new[i,j] = T_melt + (energia_restante / (RHO_WATER * C_WATER))
-                    ice_fraction[i,j] = 0.0  # Todo es agua
+                    temp_new[i,j] = TEMP_MELT + (energia_disponible - E_sensible_max - E_latente_max) / (RHO_WATER * C_WATER)
+                    ice_fraction[i,j] = 0.0
 
                 # Obtener propiedades térmicas según la fracción de hielo actual
                 k = k_ice * ice_fraction[i,j] + k_water * (1 - ice_fraction[i,j])
@@ -224,7 +217,7 @@ def simular_cambio_fase():
                     corazon_bottom <= j < corazon_top):
                     temp[i, j] = TEMP_INITIAL_ICE
                     k, rho, c = obtener_propiedades_termicas(TEMP_INITIAL_ICE)
-                    energy[i, j] = rho * c * TEMP_INITIAL_ICE
+                    energy[i,j] = RHO_ICE * C_ICE * (TEMP_INITIAL_ICE - TEMP_MELT)
                 else:
                     # Los brazos y la columna son de agua
                     temp[i, j] = TEMP_INITIAL_WATER
