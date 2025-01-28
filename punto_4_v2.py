@@ -17,7 +17,7 @@ RHO_ICE = 918
 C_WATER = 4186
 C_ICE = 2090
 
-points_per_mm = 16
+points_per_mm = 8
 Nx = int(L * 1000 * points_per_mm)
 Ny = int(H * 1000 * points_per_mm)
 Nw = int(W * 1000 * points_per_mm)
