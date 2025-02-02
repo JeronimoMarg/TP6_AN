@@ -7,8 +7,8 @@ L = 21e-3  # Longitud total (10mm + 1mm + 10mm)
 W = 1e-3   # Ancho de cada segmento
 H = 11e-3  # Altura total (10mm + 1mm)
 
-temperatura_inicial_hielo = -30
-TEMP_INITIAL_ICE = temperatura_inicial_hielo / 2 #pasa algo raro pero el codigo siempre multiplica la temeperatura inicial * 2 en la primera iteracion
+TEMP_INITIAL_ICE = -30
+TEMP_INITIAL_ICE /= 2   # dividimos por 2 porque se buguea sino
 TEMP_INITIAL_WATER = 20
 TEMP_MELT = 0
 CALOR_LATENTE_FUSION = 334000
@@ -17,10 +17,11 @@ RHO_ICE = 918
 C_WATER = 4186
 C_ICE = 2090
 
+VEL = 0.001
+
 points_per_mm = 8
 Nx = int(L * 1000 * points_per_mm)
 Ny = int(H * 1000 * points_per_mm)
-Nw = int(W * 1000 * points_per_mm)
 Dx = L / Nx
 Dy = H / Ny
 
@@ -32,12 +33,8 @@ alpha_max = max(alpha_water, alpha_ice)
 
 safety_factor = 0.1
 Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
-TOTAL_TIME = 10  # Tiempo total en segundos
+TOTAL_TIME = 30  # Tiempo total en segundos
 steps = int(TOTAL_TIME / Dt)
-
-# Velocidad de flujo de agua en mm/s
-flow_velocity = 0.1  # 0.1 mm/s
-flow_velocity_mps = flow_velocity * 1e-3  # Convertir a m/s
 
 @jit(nopython=True)
 def obtener_propiedades_termicas(T, ice_fraction=None):
@@ -80,7 +77,8 @@ def aplicar_condiciones_borde_aislamiento(temp, mask):
     return temp
 
 @jit(nopython=True)
-def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
+def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion, velocidad_flujo):
+    """Función para actualizar las temperaturas y energías en cada paso de tiempo, incluyendo advección."""
     Nx, Ny = temp.shape
     temp_new = np.copy(temp)
     energy_new = np.copy(energy)
@@ -90,13 +88,13 @@ def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
         for j in range(1, Ny-1):
             if mask[i, j]:
                 # Calcular energía disponible relativa al punto de fusión
-                energia_disponible = energy[i, j]  # Ya está ajustada en la inicialización
+                energia_disponible = energy[i, j]
 
                 # Etapa 1: Calentamiento del hielo (desde -30°C a 0°C)
-                E_sensible_max = RHO_ICE * C_ICE * (TEMP_MELT - TEMP_INITIAL_ICE)  # 30°C * capacidad calorífica
+                E_sensible_max = RHO_ICE * C_ICE * (TEMP_MELT - TEMP_INITIAL_ICE)
 
                 # Etapa 2: Fusión (calor latente)
-                E_latente_max = RHO_ICE * CALOR_LATENTE_FUSION  # Energía para fundir todo el hielo
+                E_latente_max = RHO_ICE * CALOR_LATENTE_FUSION
 
                 if energia_disponible < E_sensible_max:
                     temp_new[i,j] = TEMP_INITIAL_ICE + (energia_disponible / (RHO_ICE * C_ICE))
@@ -113,34 +111,28 @@ def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
                 rho = RHO_ICE * ice_fraction[i,j] + RHO_WATER * (1 - ice_fraction[i,j])
                 c = C_ICE * ice_fraction[i,j] + C_WATER * (1 - ice_fraction[i,j])
 
-                # Actualizar energía usando la ecuación del calor (difusión)
+                # Actualizar energía usando la ecuación del calor (difusión + advección)
                 alpha = k / (rho * c)
                 d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
                 d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
-                delta_energy = alpha * (d2T_dx2 + d2T_dy2) * Dt * rho * c
 
-                '''
-                # Advección de calor debido al flujo de agua
-                if i < Nx // 2:  # Flujo de entrada por el brazo izquierdo
-                    delta_energy += flow_velocity_mps * (temp[i+1,j] - temp[i,j]) / Dx * Dt * rho * c
-                elif i > Nx // 2:  # Flujo de salida por el brazo derecho
-                    delta_energy += flow_velocity_mps * (temp[i-1,j] - temp[i,j]) / Dx * Dt * rho * c
+                if velocidad_flujo > 0:
+                    dT_dx = (temp[i,j] - temp[i-1,j]) / Dx
+                    dT_dy = (temp[i,j] - temp[i,j-1]) / Dy
+                else:
+                    dT_dx = (temp[i+1,j] - temp[i,j]) / Dx
+                    dT_dy = (temp[i,j+1] - temp[i,j]) / Dy
+                adveccion = velocidad_flujo * (dT_dx + dT_dy)
 
+                delta_energy = alpha * (d2T_dx2 + d2T_dy2) * Dt * rho * c - adveccion * Dt
                 energy_new[i,j] = energy[i,j] + delta_energy
-                '''
-                # Término de convección (flujo horizontal de entrada)
-                term_conveccion = -flow_velocity_mps * (temp[i, j] - temp[i - 1, j]) / Dx
-
-                delta_energy = (alpha * (d2T_dx2 + d2T_dy2) + term_conveccion) * Dt * rho * c
-
-                energy_new[i, j] = energy[i, j] + delta_energy
 
     # Aplicar condiciones de borde
     temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
     return temp_new, energy_new, ice_fraction
 
-def simular_cambio_fase():
-    """Función principal para simular el cambio de fase en el dominio con forma de T."""
+def simular_cambio_fase_con_flujo():
+    """Función principal para simular el cambio de fase en el dominio con forma de T con flujo de agua."""
     mask = np.zeros((Nx, Ny), dtype=bool)
 
     # Convertir dimensiones físicas a puntos de la malla
@@ -197,6 +189,15 @@ def simular_cambio_fase():
                     k, rho, c = obtener_propiedades_termicas(TEMP_INITIAL_WATER)
                     energy[i, j] = rho * c * TEMP_INITIAL_WATER
 
+    # Definir los puntos de entrada y salida
+    entrada_izquierda = (corazon_left - brazo_largo, centro_y)
+    entrada_derecha = (corazon_right + brazo_largo, centro_y)
+    salida = (centro_x, centro_y - brazo_largo - corazon // 2)
+
+    # Velocidad de flujo en puntos por paso de tiempo
+    velocidad_flujo = VEL * mm_to_points  # 0.1 mm/s en puntos por paso de tiempo
+    velocidad_flujo *= Dt / Dx  # Escalar con respecto al paso de tiempo y tamaño de la malla
+
     # Realizar la simulación paso a paso y buscar el tiempo de demora
     tiempo_demora = None
     temperaturas_promedio = []
@@ -204,18 +205,22 @@ def simular_cambio_fase():
 
     fraccion_hielo = 1.0
     fraccion_hielo_historial.append(fraccion_hielo)
-
-    ''' #comentamos esta parte porque agrega al grafico la mitad de la temperatura
     temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
     temp_promedio_corazon = np.mean(temp_corazon)
     temperaturas_promedio.append(temp_promedio_corazon)
-    '''
-
+    
     # Crear una máscara para los valores que no queremos mostrar
     temp_masked = np.ma.masked_array(temp, ~mask)
 
     for step in range(steps):
-        temp, energy, ice_fraction = calcular_paso(temp, energy, mask, Dx, Dy, Dt, TEMP_MELT, CALOR_LATENTE_FUSION)
+        # Aplicar el flujo de entrada de agua
+        temp[entrada_izquierda[0]:entrada_izquierda[0]+1, entrada_izquierda[1]:entrada_izquierda[1]+1] = TEMP_INITIAL_WATER
+        temp[entrada_derecha[0]:entrada_derecha[0]+1, entrada_derecha[1]:entrada_derecha[1]+1] = TEMP_INITIAL_WATER
+
+        # Calcular el paso de tiempo
+        temp, energy, ice_fraction = calcular_paso(temp, energy, mask, Dx, Dy, Dt, TEMP_MELT, CALOR_LATENTE_FUSION, velocidad_flujo)
+
+        temp[salida[0]:salida[0]+1, salida[1]:salida[1]+1] = TEMP_INITIAL_WATER
         
         # Medir la fracción de hielo en el corazón
         fraccion_hielo = np.mean(ice_fraction[corazon_left:corazon_right, corazon_bottom:corazon_top])
@@ -286,8 +291,8 @@ def simular_cambio_fase():
 
 print(f"El dt es: {Dt}")
 print(f"El step es: {steps}")
-# Ejecutar la simulación
-temp_final, ice_fraction_final, tiempo_demora = simular_cambio_fase()
+# Ejecutar la simulación con flujo
+temp_final, ice_fraction_final, tiempo_demora = simular_cambio_fase_con_flujo()
 
 # Mostrar el tiempo de demora
 if tiempo_demora is not None:
