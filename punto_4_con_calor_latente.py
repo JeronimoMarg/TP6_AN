@@ -2,8 +2,9 @@ import numpy as np
 from numba import jit
 import matplotlib.pyplot as plt
 
-# --- Parámetros del problema ---
-# Modificar las dimensiones del dominio para acomodar la forma de T
+''' Este codigo realiza el punto 4 considerando el calor latente de fusion (VERSION FINAL)'''
+
+# Definicion del dominio
 L = 21e-3  # Longitud total (10mm + 1mm + 10mm)
 W = 1e-3   # Ancho de cada segmento
 H = 11e-3  # Altura total (10mm + 1mm)
@@ -31,14 +32,14 @@ alpha_ice = k_ice / (RHO_ICE * C_ICE)
 alpha_max = max(alpha_water, alpha_ice)
 
 safety_factor = 0.1
-#Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
-Dt = 0.001
-TOTAL_TIME = 30  # Tiempo total en segundos
+Dt = safety_factor * min(Dx, Dy) ** 2 / alpha_max
+#Dt = 0.001
+TOTAL_TIME = 30
 steps = int(TOTAL_TIME / Dt)
 
+# se obtienen las propiedades termicas del material dependiendo de la temp y fraccion de fase.
 @jit(nopython=True)
 def obtener_propiedades_termicas(T, ice_fraction=None):
-    """Función para obtener propiedades térmicas dependiendo de la temperatura y fracción de hielo."""
     if ice_fraction is None:
         if T < TEMP_MELT:
             return k_ice, RHO_ICE, C_ICE
@@ -50,35 +51,27 @@ def obtener_propiedades_termicas(T, ice_fraction=None):
         c = C_ICE * ice_fraction + C_WATER * (1 - ice_fraction)
         return k, rho, c
 
+# se aplica las condiciones de bordes de aislamiento termico
 @jit(nopython=True)
 def aplicar_condiciones_borde_aislamiento(temp, mask):
-    """
-    Aplica la condición de borde de aislamiento térmico (flujo de calor cero) en los bordes de la forma de "T".
-    """
     Nx, Ny = temp.shape
-
-    # Aplicar condición de flujo de calor cero en los bordes de la forma de "T"
     for i in range(Nx):
         for j in range(Ny):
-            if mask[i, j]:  # Solo aplicamos la condición en los puntos dentro de la forma de "T"
-                # Borde izquierdo
+            if mask[i, j]:
                 if i == 0:
                     temp[i, j] = temp[i + 1, j]
-                # Borde derecho
                 elif i == Nx - 1:
                     temp[i, j] = temp[i - 1, j]
-                # Borde inferior
                 if j == 0:
                     temp[i, j] = temp[i, j + 1]
-                # Borde superior
                 elif j == Ny - 1:
                     temp[i, j] = temp[i, j - 1]
 
     return temp
 
+# funcion que se utiliza para actualizar la temperatura y la energia en cada paso (IGUAL QUE EN EL PUNTO 2)
 @jit(nopython=True)
-def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
-    """Función para actualizar las temperaturas y energías en cada paso de tiempo."""
+def calcular_paso_vieja(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
     Nx, Ny = temp.shape
     temp_new = np.copy(temp)
     energy_new = np.copy(energy)
@@ -90,76 +83,112 @@ def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
     for i in range(1, Nx-1):
         for j in range(1, Ny-1):
             if mask[i, j]:
-                # Calculando la fracción de hielo
+                # calculando la fracción de hielo
                 if energy[i,j] >= E_water_min:
-                    ice_fraction[i,j] = 0.0  # Agua
+                    ice_fraction[i,j] = 0.0
                 elif energy[i,j] <= E_ice_max:
-                    ice_fraction[i,j] = 1.0  # Hielo
+                    ice_fraction[i,j] = 1.0
                 else:
                     ice_fraction[i,j] = 1.0 - (energy[i,j] - E_ice_max) / (E_water_min - E_ice_max)
 
-                # Obtener propiedades térmicas
                 k, rho, c = obtener_propiedades_termicas(temp[i,j], ice_fraction[i,j])
+                alpha = k / (rho * c)
 
-                # Derivadas espaciales para el cálculo de la energía
+                # aproximacion de las derivadas segundas
                 d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
                 d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
 
-                # Cálculo de la energía
-                energy_new[i,j] = energy[i,j] + (k * (d2T_dx2 + d2T_dy2) * Dt)
+                # calcular energia (entalpia) y temperatura
+                energy_new[i,j] = energy[i,j] + (rho * c * alpha * (d2T_dx2 + d2T_dy2) * Dt)
+                if energy_new[i,j] < 0:
+                    temp_new[i,j] = energy_new[i,j] / (RHO_ICE * C_ICE) + T_melt
+                elif energy_new[i,j] > RHO_WATER * CALOR_LATENTE_FUSION:
+                    temp_new[i,j] = (energy_new[i,j] - RHO_WATER * CALOR_LATENTE_FUSION) / (RHO_WATER * C_WATER) + T_melt
+                else:
+                    temp_new[i,j] = T_melt
 
-                # Actualización de la temperatura
-                temp_new[i,j] = energy_new[i,j] / (rho * c)
-
-    # Aplicar condiciones de borde de aislamiento térmico
     temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
 
     return temp_new, energy_new, ice_fraction
 
-def simular_cambio_fase():
-    """Función principal para simular el cambio de fase en el dominio con forma de T."""
-    mask = np.zeros((Nx, Ny), dtype=bool)
+# funcion que se utiliza para actualizar la temperatura y la energia en cada paso (NUEVO METODO, SE CONSIDERA CADA FASE EXPLICITAMENTE)
+@jit(nopython=True)
+def calcular_paso(temp, energy, mask, Dx, Dy, Dt, T_melt, L_fusion):
+    Nx, Ny = temp.shape
+    temp_new = np.copy(temp)
+    energy_new = np.copy(energy)
+    ice_fraction = np.ones_like(temp)
 
-    # Convertir dimensiones físicas a puntos de la malla
+    for i in range(1, Nx-1):
+        for j in range(1, Ny-1):
+            if mask[i, j]:
+                # Calcular energía disponible relativa al punto de fusión
+                energia_disponible = energy[i, j]
+
+                # Etapa 1: Calentamiento del hielo (desde -30°C a 0°C)
+                E_sensible_max = RHO_ICE * C_ICE * (TEMP_MELT - TEMP_INITIAL_ICE)
+
+                # Etapa 2: Fusión (calor latente)
+                E_latente_max = RHO_ICE * CALOR_LATENTE_FUSION
+
+                if energia_disponible < E_sensible_max:
+                    temp_new[i,j] = TEMP_INITIAL_ICE + (energia_disponible / (RHO_ICE * C_ICE))
+                    ice_fraction[i,j] = 1.0
+                elif energia_disponible < E_sensible_max + E_latente_max:
+                    temp_new[i,j] = TEMP_MELT
+                    ice_fraction[i,j] = 1.0 - (energia_disponible - E_sensible_max) / E_latente_max
+                else:
+                    temp_new[i,j] = TEMP_MELT + (energia_disponible - E_sensible_max - E_latente_max) / (RHO_WATER * C_WATER)
+                    ice_fraction[i,j] = 0.0
+
+                # Obtener propiedades térmicas según la fracción de hielo actual
+                k = k_ice * ice_fraction[i,j] + k_water * (1 - ice_fraction[i,j])
+                rho = RHO_ICE * ice_fraction[i,j] + RHO_WATER * (1 - ice_fraction[i,j])
+                c = C_ICE * ice_fraction[i,j] + C_WATER * (1 - ice_fraction[i,j])
+
+                # Actualizar energía usando la ecuación del calor (difusión)
+                alpha = k / (rho * c)
+                d2T_dx2 = (temp[i+1,j] - 2*temp[i,j] + temp[i-1,j]) / Dx**2
+                d2T_dy2 = (temp[i,j+1] - 2*temp[i,j] + temp[i,j-1]) / Dy**2
+                delta_energy = alpha * (d2T_dx2 + d2T_dy2) * Dt * rho * c
+
+                energy_new[i,j] = energy[i,j] + delta_energy
+
+    temp_new = aplicar_condiciones_borde_aislamiento(temp_new, mask)
+    return temp_new, energy_new, ice_fraction
+
+# funcion que inicializa la simulacion y realiza el cambio de fase
+def simular_cambio_fase():
+    mask = np.zeros((Nx, Ny), dtype=bool)
     mm_to_points = points_per_mm
-    
-    # Dimensiones en puntos
     brazo_largo = 10 * mm_to_points  # 10mm
     brazo_ancho = 1 * mm_to_points   # 1mm
     corazon = 1 * mm_to_points       # 1mm x 1mm
-
-    # Posiciones centrales
     centro_x = Nx // 2
-    centro_y = Ny // 2 + brazo_largo // 2  # Ajustado para mover el centro hacia arriba
+    centro_y = Ny // 2 + brazo_largo // 2
 
-    # Definir el corazón de hielo (cuadrado central)
+    # corazon de hielo
     corazon_left = centro_x - corazon // 2
     corazon_right = centro_x + corazon // 2
     corazon_top = centro_y + corazon // 2
     corazon_bottom = centro_y - corazon // 2
 
-    # Definir los brazos horizontales y la columna vertical
-    # Brazo izquierdo
     mask[corazon_left-brazo_largo:corazon_left, 
          centro_y-brazo_ancho//2:centro_y+brazo_ancho//2] = True
     
-    # Brazo derecho
     mask[corazon_right:corazon_right+brazo_largo, 
          centro_y-brazo_ancho//2:centro_y+brazo_ancho//2] = True
     
-    # Columna vertical (ajustada para extenderse hacia abajo)
     mask[centro_x-brazo_ancho//2:centro_x+brazo_ancho//2, 
          centro_y-brazo_largo-corazon//2:centro_y-corazon//2] = True
     
-    # Corazón de hielo
     mask[corazon_left:corazon_right, 
          corazon_bottom:corazon_top] = True
 
-    # Inicializar las condiciones de temperatura y energía
+    # inicializar temperatura y entalpia
     temp = np.full((Nx, Ny), TEMP_INITIAL_WATER)
     energy = np.zeros((Nx, Ny))
 
-    # Establecer las condiciones iniciales
     for i in range(Nx):
         for j in range(Ny):
             if mask[i, j]:
@@ -168,61 +197,59 @@ def simular_cambio_fase():
                     corazon_bottom <= j < corazon_top):
                     temp[i, j] = TEMP_INITIAL_ICE
                     k, rho, c = obtener_propiedades_termicas(TEMP_INITIAL_ICE)
-                    energy[i, j] = rho * c * TEMP_INITIAL_ICE
+                    energy[i,j] = RHO_ICE * C_ICE * (TEMP_INITIAL_ICE - TEMP_MELT)
                 else:
                     # Los brazos y la columna son de agua
                     temp[i, j] = TEMP_INITIAL_WATER
                     k, rho, c = obtener_propiedades_termicas(TEMP_INITIAL_WATER)
                     energy[i, j] = rho * c * TEMP_INITIAL_WATER
 
-    # Realizar la simulación paso a paso y buscar el tiempo de demora
     tiempo_demora = None
     temperaturas_promedio = []
     fraccion_hielo_historial = []
+
+    fraccion_hielo = 1.0
+    fraccion_hielo_historial.append(fraccion_hielo)
+    temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
+    temp_promedio_corazon = np.mean(temp_corazon)
+    temperaturas_promedio.append(temp_promedio_corazon)
     
-    # Crear una máscara para los valores que no queremos mostrar
     temp_masked = np.ma.masked_array(temp, ~mask)
 
     for step in range(steps):
-        temp, energy, ice_fraction = calcular_paso(temp, energy, mask, Dx, Dy, Dt, TEMP_MELT, CALOR_LATENTE_FUSION)
+        #Usamos la vieja porque parece andar mejor, pero ambas dan resultados similares
+        temp, energy, ice_fraction = calcular_paso_vieja(temp, energy, mask, Dx, Dy, Dt, TEMP_MELT, CALOR_LATENTE_FUSION)
         
-        # Medir la fracción de hielo en el corazón
+        # medicion la fracción de hielo en el corazón
         fraccion_hielo = np.mean(ice_fraction[corazon_left:corazon_right, corazon_bottom:corazon_top])
         
         #CALCULO DE FRACCION DE HIELO SEGUN TEMPERATURA
         cant_temps = points_per_mm ** 2
         temp_bajo_0 = np.sum(temp[corazon_left:corazon_right, corazon_bottom:corazon_top] <= TEMP_MELT)
-        #print(f"Cantidad total de temps dentro del corazon: {cant_temps:.2f}, Cantidad de temps bajo 0: {temp_bajo_0:.2f}, Cantidad de temp sobre 0: {temp_sobre_0:.2f}")
         fraccion_hielo_aux = temp_bajo_0 / cant_temps
-        fraccion_hielo_historial.append(fraccion_hielo_aux)
-
         #fraccion_hielo = fraccion_hielo_aux
+
+        fraccion_hielo_historial.append(fraccion_hielo)
 
         #TEMPERATURAS PROMEDIO EN EL CORAZON
         temp_corazon = temp[corazon_left:corazon_right, corazon_bottom:corazon_top]
         temp_promedio_corazon = np.mean(temp_corazon)
         temperaturas_promedio.append(temp_promedio_corazon)
-
-        # Verificar si la fracción de hielo ha alcanzado el 50%
+        
+        # condicion de parada
         if fraccion_hielo <= 0.5 and tiempo_demora is None:
             tiempo_demora = step * Dt
 
-        # Mostrar el cambio de fase en la simulación cada cierto número de pasos
-        if step % 1000 == 0:  # Aumentar o disminuir este número para ver más o menos frames
-            # Actualizar la máscara de temperatura
+        if 0: #grafica la T a traves del tiempo (lo hace mejor el otro codigo)
             temp_masked = np.ma.masked_array(temp, ~mask)
 
-            # Crear una figura más grande para mejor visualización
             plt.figure(figsize=(10, 8))
-            
-            # Limpiar la figura anterior
             plt.clf()
             
-            # Graficar la nueva distribución de temperatura
             im = plt.imshow(temp_masked.T, cmap='coolwarm', interpolation='nearest',
                           vmin=TEMP_INITIAL_ICE, vmax=TEMP_INITIAL_WATER, extent=[0, L, 0, H*-1])
             plt.colorbar(im, label='Temperatura (°C)')
-            plt.title(f'Distribución de Temperatura - step = {step:.2f} \nFracción de hielo en el corazón: {fraccion_hielo:.2%}')
+            plt.title(f'Distribución de Temperatura - t = {step*Dt:.2f} s\nFracción de hielo en el corazón: {fraccion_hielo:.2%}')
             plt.xlabel('Posición X (mm)')
             plt.ylabel('Posición Y (mm)')
             plt.gca().invert_yaxis()
@@ -257,10 +284,8 @@ def simular_cambio_fase():
 
 print(f"El dt es: {Dt}")
 print(f"El step es: {steps}")
-# Ejecutar la simulación
 temp_final, ice_fraction_final, tiempo_demora = simular_cambio_fase()
 
-# Mostrar el tiempo de demora
 if tiempo_demora is not None:
     print(f"El tiempo de demora para alcanzar el 50% de la sección útil es: {tiempo_demora:.2f} segundos")
 else:
